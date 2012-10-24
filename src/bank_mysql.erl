@@ -23,6 +23,7 @@
 -export([fetch_all/1]).
 -export([ping/1]).
 -export([prepare/3]).
+-export([unprepare/2]).
 -export([sql_query/2]).
 
 %% Flags for client capabilities.
@@ -243,6 +244,18 @@ prepare(Stmt, Query, State=#mysql_client{state=ready, stmts=StmtsList}) ->
 				stmts=[{Stmt, StmtHandler}|StmtsList]}};
 		Res ->
 			Res
+	end.
+
+%% @doc Delete a prepared statement.
+-spec unprepare(any(), State)
+	-> {ok, State} when State::state().
+unprepare(Stmt, State=#mysql_client{state=ready, stmts=StmtsList}) ->
+	case lists:keytake(Stmt, 1, StmtsList) of
+		{value, {Stmt, StmtHandler}, StmtsList0} ->
+			{ok, State2} = send_close(StmtHandler, new_query(State)),
+			{ok, State2#mysql_client{stmts=StmtsList0}};
+		false ->
+			{ok, State}
 	end.
 
 %% @doc Execute the given SQL query.
@@ -611,6 +624,10 @@ send_ping(State) ->
 send_prepare(Query, State) ->
 	QueryBin = iolist_to_binary(Query),
 	send_command(?COM_STMT_PREPARE, QueryBin, State).
+
+send_close(StmtHandler, State) ->
+	Bin = <<StmtHandler:32/little>>,
+	send_command(?COM_STMT_CLOSE, Bin, State).
 
 send_query(Query, State) ->
 	QueryBin = iolist_to_binary(Query),
