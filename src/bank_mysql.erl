@@ -521,7 +521,7 @@ params_to_bin([], NullBin, TypesBin, ValuesBin) ->
 	<< NullBin2/binary, 1:8, TypesBin/binary, ValuesBin/binary >>;
 params_to_bin([null|Tail], NullBin, TypesBin, ValuesBin) ->
 	params_to_bin(Tail,
-		<< NullBin/binary, 1:1 >>,
+		<< NullBin/bitstring, 1:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_NULL:16/little >>,
 		ValuesBin);
 %% There is no true or false in MySQL, use 1 or 0 instead.
@@ -547,31 +547,31 @@ params_to_bin([Value|Tail], NullBin, TypesBin, ValuesBin)
 		S -> << 254:8, S:64/little >>
 	end,
 	params_to_bin(Tail,
-		<< NullBin/binary, 0:1 >>,
+		<< NullBin/bitstring, 0:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_BLOB:16/little >>,
 		<< ValuesBin/binary, SizeBin/binary, Value/binary >>);
 params_to_bin([Value|Tail], NullBin, TypesBin, ValuesBin)
 		when is_integer(Value) ->
 	params_to_bin(Tail,
-		<< NullBin/binary, 0:1 >>,
+		<< NullBin/bitstring, 0:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_LONGLONG:16/little >>,
 		<< ValuesBin/binary, Value:64/little >>);
 params_to_bin([Value|Tail], NullBin, TypesBin, ValuesBin)
 		when is_float(Value) ->
 	params_to_bin(Tail,
-		<< NullBin/binary, 0:1 >>,
+		<< NullBin/bitstring, 0:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_DOUBLE:16/little >>,
 		<< ValuesBin/binary, Value:64/float-little >>);
 params_to_bin([{Y, Mo, D}|Tail], NullBin, TypesBin, ValuesBin)
 		when Y > 23, Mo > 0, Mo =< 12, D > 0, D =< 31 ->
 	params_to_bin(Tail,
-		<< NullBin/binary, 0:1 >>,
+		<< NullBin/bitstring, 0:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_DATE:16/little >>,
 		<< ValuesBin/binary, 4:8, Y:16/little, Mo:8, D:8 >>);
 params_to_bin([{H, Mi, S}|Tail], NullBin, TypesBin, ValuesBin)
 		when H >= 0, H < 24, Mi >= 0, Mi < 60, S >= 0, S < 60 ->
 	params_to_bin(Tail,
-		<< NullBin/binary, 0:1 >>,
+		<< NullBin/bitstring, 0:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_TIME:16/little >>,
 		%% @todo Second byte is for negative times.
 		<< ValuesBin/binary, 8:8, 0:8, 0:32, H:8, Mi:8, S:8 >>);
@@ -579,7 +579,7 @@ params_to_bin([{{Y, Mo, D}, {H, Mi, S}}|Tail], NullBin, TypesBin, ValuesBin)
 		when Y > 23, Mo > 0, Mo =< 12, D > 0, D =< 31,
 			H >= 0, H < 24, Mi >= 0, Mi < 60, S >= 0, S < 60 ->
 	params_to_bin(Tail,
-		<< NullBin/binary, 0:1 >>,
+		<< NullBin/bitstring, 0:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_DATETIME:16/little >>,
 		<< ValuesBin/binary, 7:8, Y:16/little, Mo:8, D:8, H:8, Mi:8, S:8 >>).
 
