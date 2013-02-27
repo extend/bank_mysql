@@ -398,6 +398,10 @@ parse_bin_row(Packet, [{field, _, binary, _}|Fields],
 	%% We don't expect any null value here.
 	false = Value =:= null,
 	parse_bin_row(Rest, Fields, NullRest, [Value|Acc]);
+parse_bin_row(Packet, [{field, _, integer, ?MYSQL_TYPE_TINY}|Fields],
+		<< 0:1, NullRest/bits >>, Acc) ->
+	<< Value:8/little, Rest/binary >> = Packet,
+	parse_bin_row(Rest, Fields, NullRest, [Value|Acc]);
 parse_bin_row(Packet, [{field, _, integer, ?MYSQL_TYPE_LONG}|Fields],
 		<< 0:1, NullRest/bits >>, Acc) ->
 	<< Value:32/little, Rest/binary >> = Packet,
