@@ -298,7 +298,11 @@ parse_handshake_init(Packet) ->
 		_ScrambleLength:8, 0:80, Rest3/bits >> = Rest2,
 	Caps = CapsLow bor (CapsHigh bsl 16),
 	[ScrambleBuff2, AuthPlugin]
-		= binary:split(Rest3, << 0:8 >>, [global, trim]),
+		= case binary:split(Rest3, << 0:8 >>, [global, trim]) of
+      [S, A] -> [S, A];
+      %% MySQL before version 5.5.7 didn't have auth_plugin_name
+      [S] -> [S, <<>>]
+    end,
 	{ok, ProtoVersion, ServerVersion, ThreadID,
 		<< ScrambleBuff1/binary, ScrambleBuff2/binary >>,
 		Caps, Language, Status, AuthPlugin}.
