@@ -460,18 +460,6 @@ convert_type(timestamp, Value) ->
 convert_type(binary, Value) ->
 	Value.
 
-binary_to_integer(Bin) ->
-	list_to_integer(binary_to_list(Bin)).
-
-%% @todo We might want a number() and not a float(), in which case the
-%% second clause would do a list_to_integer/1 call directly.
-binary_to_float(Bin) ->
-	L = binary_to_list(Bin),
-	case lists:member($., L) of
-		true -> list_to_float(L);
-		false -> list_to_float(L ++ ".0")
-	end.
-
 parse_eof(Packet) ->
 	<< 16#fe:8, Warnings:16/little, Status:16/little >> = Packet,
 	{eof, Warnings, Status}.
@@ -571,6 +559,9 @@ params_to_bin([Value|Tail], NullBin, TypesBin, ValuesBin)
 		<< NullBin/bitstring, 0:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_BLOB:16/little >>,
 		<< ValuesBin/binary, SizeBin/binary, Value/binary >>);
+%% @todo Handle unsigned if the value is too high, limit values otherwise.
+%% signed: -9223372036854775808	9223372036854775807
+%% unsigned: 0	18446744073709551615
 params_to_bin([Value|Tail], NullBin, TypesBin, ValuesBin)
 		when is_integer(Value) ->
 	params_to_bin(Tail,
