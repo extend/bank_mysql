@@ -24,7 +24,7 @@
 -export([ping/1]).
 -export([prepare/3]).
 -export([unprepare/2]).
--export([sql_query/2]).
+-export([query/2]).
 
 %% Flags for client capabilities.
 -define(CLIENT_LONG_PASSWORD, 1). %% New more secure passwords
@@ -259,10 +259,10 @@ unprepare(Stmt, State=#mysql_client{state=ready, stmts=StmtsList}) ->
 	end.
 
 %% @doc Execute the given SQL query.
--spec sql_query(string(), State)
+-spec query(string(), State)
 	-> {ok, non_neg_integer(), non_neg_integer(), State}
 	| {result_set, [field()], State} | remote_error() when State::state().
-sql_query(Query, State=#mysql_client{state=ready}) ->
+query(Query, State=#mysql_client{state=ready}) ->
 	{ok, State2} = send_query(Query, new_query(State)),
 	{ok, ResPacket, State3} = recv(State2),
 	case handle_result(ResPacket, State3) of
