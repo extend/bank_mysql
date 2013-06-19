@@ -451,7 +451,7 @@ parse_bin_row(Packet, [{field, _, timestamp, _}|Fields],
 convert_type(_, null) ->
 	null;
 convert_type(integer, Value) ->
-	list_to_integer(binary_to_list(Value));
+	binary_to_integer(Value);
 convert_type(float, Value) ->
 	binary_to_float(Value);
 convert_type(decimal, Value) ->
