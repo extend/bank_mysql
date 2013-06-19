@@ -107,7 +107,7 @@
 -define(MYSQL_TYPE_GEOMETRY, 16#ff).
 
 %% @todo bitstring, time_tz, timestamp_tz
--type erlang_type() :: null | integer | float
+-type erlang_type() :: null | integer | float | decimal
 	| date | time | timestamp | binary.
 
 %% @todo Support all other types.
@@ -122,6 +122,7 @@
 	| ?MYSQL_TYPE_DATE
 	| ?MYSQL_TYPE_TIME
 	| ?MYSQL_TYPE_DATETIME
+  | ?MYSQL_TYPE_NEWDECIMAL
 	| ?MYSQL_TYPE_BLOB
 	| ?MYSQL_TYPE_VAR_STRING
 	| ?MYSQL_TYPE_STRING.
@@ -134,7 +135,8 @@
 
 -type field() :: {field, binary(), erlang_type(), mysql_type()}.
 -type remote_error() :: {remote_error, non_neg_integer(), binary(), binary()}.
--type value() :: null | integer() | float()
+-type decimal() :: {decimal, Value :: integer(), Scale :: non_neg_integer()}.
+-type value() :: null | integer() | float() | decimal()
 	| calendar:date() | calendar:time() | calendar:datetime() | binary().
 
 -record(mysql_client, {
@@ -361,7 +363,7 @@ mysql_to_erlang_type(?MYSQL_TYPE_DATETIME) -> timestamp;
 %mysql_to_erlang_type(?MYSQL_TYPE_NEWDATE) -> date;
 %mysql_to_erlang_type(?MYSQL_TYPE_VARCHAR) -> binary;
 %mysql_to_erlang_type(?MYSQL_TYPE_BIT) -> bitstring;
-%mysql_to_erlang_type(?MYSQL_TYPE_NEWDECIMAL) -> float;
+mysql_to_erlang_type(?MYSQL_TYPE_NEWDECIMAL) -> decimal;
 %mysql_to_erlang_type(?MYSQL_TYPE_ENUM) -> integer;
 %mysql_to_erlang_type(?MYSQL_TYPE_SET) -> integer;
 %mysql_to_erlang_type(?MYSQL_TYPE_TINY_BLOB) -> binary;
@@ -414,6 +416,10 @@ parse_bin_row(Packet, [{field, _, integer, ?MYSQL_TYPE_LONGLONG}|Fields],
 		<< 0:1, NullRest/bits >>, Acc) ->
 	<< Value:64/little, Rest/binary >> = Packet,
 	parse_bin_row(Rest, Fields, NullRest, [Value|Acc]);
+parse_bin_row(Packet, [{field, _, decimal, ?MYSQL_TYPE_NEWDECIMAL}|Fields],
+    << 0:1, NullRest/bits >>, Acc) ->
+  {Value, Rest} = parse_decimal(Packet),
+  parse_bin_row(Rest, Fields, NullRest, [Value|Acc]);
 parse_bin_row(Packet, [{field, _, date, _}|Fields],
 		<< 0:1, NullRest/bits >>, Acc) ->
 	<< 4:8, Y:16/little, Mo:8, D:8, Rest/binary >> = Packet,
@@ -448,6 +454,8 @@ convert_type(integer, Value) ->
 	list_to_integer(binary_to_list(Value));
 convert_type(float, Value) ->
 	binary_to_float(Value);
+convert_type(decimal, Value) ->
+  convert_decimal(Value);
 convert_type(date, Value) ->
 	<< Y:4/binary, $-, Mo:2/binary, $-, D:2/binary >> = Value,
 	{binary_to_integer(Y), binary_to_integer(Mo), binary_to_integer(D)};
@@ -483,6 +491,23 @@ parse_lcs(Bin) ->
 	{Length, Rest} = parse_lcb(Bin),
 	<< String:Length/binary, Rest2/bits >> = Rest,
 	{String, Rest2}.
+
+parse_decimal(Bin) ->
+  {Value, Rest} = parse_lcs(Bin),
+  case Value of
+    null ->
+      {null, Rest};
+    _ ->
+      {convert_decimal(Value), Rest}
+  end.
+
+convert_decimal(Bin) ->
+  case binary:split(Bin, << $.:8 >>) of
+    [Int, Dec] ->
+      {decimal, binary_to_integer(<< Int/binary, Dec/binary >>), byte_size(Dec)};
+    [Int] ->
+      {decimal, binary_to_integer(Int), 0}
+  end.
 
 %% Sending.
 
@@ -574,6 +599,12 @@ params_to_bin([Value|Tail], NullBin, TypesBin, ValuesBin)
 		<< NullBin/bitstring, 0:1 >>,
 		<< TypesBin/binary, ?MYSQL_TYPE_DOUBLE:16/little >>,
 		<< ValuesBin/binary, Value:64/float-little >>);
+params_to_bin([{decimal, _, _} = Value|Tail], NullBin, TypesBin, ValuesBin) ->
+  ValueBin = decimal_to_mysql(Value),
+  params_to_bin(Tail,
+    << NullBin/bitstring, 0:1 >>,
+    << TypesBin/binary, ?MYSQL_TYPE_NEWDECIMAL:16/little >>,
+    << ValuesBin/binary, ValueBin/binary >>);
 params_to_bin([{Y, Mo, D}|Tail], NullBin, TypesBin, ValuesBin)
 		when Y > 23, Mo > 0, Mo =< 12, D > 0, D =< 31 ->
 	params_to_bin(Tail,
@@ -616,6 +647,35 @@ null_map_to_mysql(Bits, Acc) ->
 	BitsList = [X || << X:1 >> <= Bits],
 	ReverseBits = << << Y:1 >> || Y <- lists:reverse(BitsList) >>,
 	<< Acc/binary, 0:Padding, ReverseBits/bits >>.
+
+decimal_to_mysql({decimal, Value, 0}) when is_integer(Value) ->
+  ValueBin = integer_to_binary(Value),
+  ValueSize = byte_size(ValueBin),
+  << ValueSize:8, ValueBin/binary >>;
+decimal_to_mysql({decimal, Value, Scale}) when is_integer(Value), Value >= 0, Scale > 0 ->
+    decimal_to_mysql(<<>>, Value, Scale);
+decimal_to_mysql({decimal, Value, Scale}) when is_integer(Value), Scale > 0 ->
+    decimal_to_mysql(<< $-:8 >>, Value * (-1), Scale).
+
+decimal_to_mysql(Sign, Value, Scale) ->
+  ValueBin = integer_to_binary(Value),
+  ValueSize = byte_size(ValueBin),
+  ValueBin2 = if
+    ValueSize =< Scale ->
+      Nulls = repeat_zeros(Scale - ValueSize, <<>>),
+      << Sign/binary, $0:8, $.:8, Nulls/binary, ValueBin/binary >>;
+    true ->
+      IntSize = ValueSize - Scale,
+      << Int:IntSize/binary, Dec/binary >> = ValueBin,
+      << Sign/binary, Int/binary, $.:8, Dec/binary >>
+  end,
+  ValueSize2 = byte_size(ValueBin2),
+  << ValueSize2:8, ValueBin2/binary >>.
+
+repeat_zeros(0, Acc) ->
+  Acc;
+repeat_zeros(N, Acc) when N > 0 ->
+  repeat_zeros(N - 1, << Acc/binary, $0:8 >>).
 
 send_ping(State) ->
 	send_command(?COM_PING, <<>>, State).
