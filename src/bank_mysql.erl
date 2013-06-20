@@ -527,17 +527,10 @@ send_client_auth(User, Password, Database, ScrambleBuffer, Language,
 		UserBin/binary, 0:8, PassBin/binary, DatabaseBin/binary, 0:8 >>, State).
 
 scramble(Password, Scramble) ->
-	Stage1Hash = crypto:sha(Password),
-	DoubleHash = crypto:sha(Stage1Hash),
-	ScrambledHash = crypto:sha(<< Scramble/binary, DoubleHash/binary >>),
-	binary_xor(ScrambledHash, Stage1Hash).
-
-binary_xor(BinA, BinB) ->
-	binary_xor(BinA, BinB, <<>>).
-binary_xor(<<>>, <<>>, Acc) ->
-	Acc;
-binary_xor(<< A, RestA/binary >>, << B, RestB/binary >>, Acc) ->
-	binary_xor(RestA, RestB, << Acc/binary, (A bxor B):8 >>).
+	Stage1Hash = crypto:hash(sha, Password),
+	DoubleHash = crypto:hash(sha, Stage1Hash),
+	ScrambledHash = crypto:hash(sha, << Scramble/binary, DoubleHash/binary >>),
+	crypto:exor(ScrambledHash, Stage1Hash).
 
 send_execute(StmtHandler, Params, State) ->
 	ParamsBin = case length(Params) of
