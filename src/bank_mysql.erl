@@ -122,7 +122,7 @@
 	| ?MYSQL_TYPE_DATE
 	| ?MYSQL_TYPE_TIME
 	| ?MYSQL_TYPE_DATETIME
-  | ?MYSQL_TYPE_NEWDECIMAL
+	| ?MYSQL_TYPE_NEWDECIMAL
 	| ?MYSQL_TYPE_BLOB
 	| ?MYSQL_TYPE_VAR_STRING
 	| ?MYSQL_TYPE_STRING.
@@ -301,10 +301,10 @@ parse_handshake_init(Packet) ->
 	Caps = CapsLow bor (CapsHigh bsl 16),
 	[ScrambleBuff2, AuthPlugin]
 		= case binary:split(Rest3, << 0:8 >>, [global, trim]) of
-      [S, A] -> [S, A];
-      %% MySQL before version 5.5.7 didn't have auth_plugin_name
-      [S] -> [S, <<>>]
-    end,
+			[S, A] -> [S, A];
+			%% MySQL before version 5.5.7 didn't have auth_plugin_name
+			[S] -> [S, <<>>]
+		end,
 	{ok, ProtoVersion, ServerVersion, ThreadID,
 		<< ScrambleBuff1/binary, ScrambleBuff2/binary >>,
 		Caps, Language, Status, AuthPlugin}.
@@ -493,21 +493,21 @@ parse_lcs(Bin) ->
 	{String, Rest2}.
 
 parse_decimal(Bin) ->
-  {Value, Rest} = parse_lcs(Bin),
-  case Value of
-    null ->
-      {null, Rest};
-    _ ->
-      {convert_decimal(Value), Rest}
-  end.
+	{Value, Rest} = parse_lcs(Bin),
+	case Value of
+		null ->
+			{null, Rest};
+		_ ->
+			{convert_decimal(Value), Rest}
+	end.
 
 convert_decimal(Bin) ->
-  case binary:split(Bin, << $.:8 >>) of
-    [Int, Dec] ->
-      {decimal, binary_to_integer(<< Int/binary, Dec/binary >>), byte_size(Dec)};
-    [Int] ->
-      {decimal, binary_to_integer(Int), 0}
-  end.
+	case binary:split(Bin, << $.:8 >>) of
+		[Int, Dec] ->
+			{decimal, binary_to_integer(<< Int/binary, Dec/binary >>), byte_size(Dec)};
+		[Int] ->
+			{decimal, binary_to_integer(Int), 0}
+	end.
 
 %% Sending.
 
@@ -527,17 +527,10 @@ send_client_auth(User, Password, Database, ScrambleBuffer, Language,
 		UserBin/binary, 0:8, PassBin/binary, DatabaseBin/binary, 0:8 >>, State).
 
 scramble(Password, Scramble) ->
-	Stage1Hash = crypto:sha(Password),
-	DoubleHash = crypto:sha(Stage1Hash),
-	ScrambledHash = crypto:sha(<< Scramble/binary, DoubleHash/binary >>),
-	binary_xor(ScrambledHash, Stage1Hash).
-
-binary_xor(BinA, BinB) ->
-	binary_xor(BinA, BinB, <<>>).
-binary_xor(<<>>, <<>>, Acc) ->
-	Acc;
-binary_xor(<< A, RestA/binary >>, << B, RestB/binary >>, Acc) ->
-	binary_xor(RestA, RestB, << Acc/binary, (A bxor B):8 >>).
+	Stage1Hash = crypto:hash(sha, Password),
+	DoubleHash = crypto:hash(sha, Stage1Hash),
+	ScrambledHash = crypto:hash(sha, << Scramble/binary, DoubleHash/binary >>),
+	crypto:exor(ScrambledHash, Stage1Hash).
 
 send_execute(StmtHandler, Params, State) ->
 	ParamsBin = case length(Params) of
@@ -600,11 +593,11 @@ params_to_bin([Value|Tail], NullBin, TypesBin, ValuesBin)
 		<< TypesBin/binary, ?MYSQL_TYPE_DOUBLE:16/little >>,
 		<< ValuesBin/binary, Value:64/float-little >>);
 params_to_bin([{decimal, _, _} = Value|Tail], NullBin, TypesBin, ValuesBin) ->
-  ValueBin = decimal_to_mysql(Value),
-  params_to_bin(Tail,
-    << NullBin/bitstring, 0:1 >>,
-    << TypesBin/binary, ?MYSQL_TYPE_NEWDECIMAL:16/little >>,
-    << ValuesBin/binary, ValueBin/binary >>);
+	ValueBin = decimal_to_mysql(Value),
+	params_to_bin(Tail,
+		<< NullBin/bitstring, 0:1 >>,
+		<< TypesBin/binary, ?MYSQL_TYPE_NEWDECIMAL:16/little >>,
+		<< ValuesBin/binary, ValueBin/binary >>);
 params_to_bin([{Y, Mo, D}|Tail], NullBin, TypesBin, ValuesBin)
 		when Y > 23, Mo > 0, Mo =< 12, D > 0, D =< 31 ->
 	params_to_bin(Tail,
@@ -649,33 +642,33 @@ null_map_to_mysql(Bits, Acc) ->
 	<< Acc/binary, 0:Padding, ReverseBits/bits >>.
 
 decimal_to_mysql({decimal, Value, 0}) when is_integer(Value) ->
-  ValueBin = integer_to_binary(Value),
-  ValueSize = byte_size(ValueBin),
-  << ValueSize:8, ValueBin/binary >>;
+	ValueBin = integer_to_binary(Value),
+	ValueSize = byte_size(ValueBin),
+	<< ValueSize:8, ValueBin/binary >>;
 decimal_to_mysql({decimal, Value, Scale}) when is_integer(Value), Value >= 0, Scale > 0 ->
-    decimal_to_mysql(<<>>, Value, Scale);
+	decimal_to_mysql(<<>>, Value, Scale);
 decimal_to_mysql({decimal, Value, Scale}) when is_integer(Value), Scale > 0 ->
-    decimal_to_mysql(<< $-:8 >>, Value * (-1), Scale).
+	decimal_to_mysql(<< $-:8 >>, Value * (-1), Scale).
 
 decimal_to_mysql(Sign, Value, Scale) ->
-  ValueBin = integer_to_binary(Value),
-  ValueSize = byte_size(ValueBin),
-  ValueBin2 = if
-    ValueSize =< Scale ->
-      Nulls = repeat_zeros(Scale - ValueSize, <<>>),
-      << Sign/binary, $0:8, $.:8, Nulls/binary, ValueBin/binary >>;
-    true ->
-      IntSize = ValueSize - Scale,
-      << Int:IntSize/binary, Dec/binary >> = ValueBin,
-      << Sign/binary, Int/binary, $.:8, Dec/binary >>
-  end,
-  ValueSize2 = byte_size(ValueBin2),
-  << ValueSize2:8, ValueBin2/binary >>.
+	ValueBin = integer_to_binary(Value),
+	ValueSize = byte_size(ValueBin),
+	ValueBin2 = if
+		ValueSize =< Scale ->
+			Nulls = repeat_zeros(Scale - ValueSize, <<>>),
+			<< Sign/binary, $0:8, $.:8, Nulls/binary, ValueBin/binary >>;
+		true ->
+			IntSize = ValueSize - Scale,
+			<< Int:IntSize/binary, Dec/binary >> = ValueBin,
+			<< Sign/binary, Int/binary, $.:8, Dec/binary >>
+	end,
+	ValueSize2 = byte_size(ValueBin2),
+	<< ValueSize2:8, ValueBin2/binary >>.
 
 repeat_zeros(0, Acc) ->
-  Acc;
+	Acc;
 repeat_zeros(N, Acc) when N > 0 ->
-  repeat_zeros(N - 1, << Acc/binary, $0:8 >>).
+	repeat_zeros(N - 1, << Acc/binary, $0:8 >>).
 
 send_ping(State) ->
 	send_command(?COM_PING, <<>>, State).
